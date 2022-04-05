@@ -1,13 +1,16 @@
 import json
 import logging
+from random import random
 from time import sleep
 from uuid import uuid4
 
 from flask import Flask, request, Response
 from selenium import webdriver
+from selenium.webdriver import DesiredCapabilities
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+import undetected_chromedriver as uc
 
 app = Flask(__name__)
 
@@ -52,7 +55,7 @@ def _run(config):
     try:
         props = config.get("props", {})
         browser = config.get("browser", "firefox")
-        step_delay = int(config.get("step_delay", "1"))
+        step_delay = config.get("step_delay", "random")
 
         unique_run_id = str(uuid4())
 
@@ -61,6 +64,8 @@ def _run(config):
             driver = _create_firefox()
         elif browser == "chrome":
             driver = _create_chrome()
+        elif browser == "undetected_chrome":
+            driver = _create_undetected_chrome()
         else:
             raise Exception("Unknown browser {}".format(browser))
 
@@ -74,15 +79,27 @@ def _run(config):
             if _CAPTURE_SCREENSHOTS:
                 driver.save_screenshot("{}-{}-POST.png".format(unique_run_id, step_num))
             step_num = step_num + 1
-            if step_delay > 0:
-                _logger.info("Sleeping for {} seconds".format(step_delay))
-                sleep(step_delay)
+            if step_delay == "random":
+                step_delay_int = int(10 * random())
+            else:
+                step_delay_int = int(step_delay)
+
+            if step_delay_int > 0:
+                _logger.info("Sleeping for {} seconds".format(step_delay_int))
+                sleep(step_delay_int)
 
         _logger.info("Finished running, result - {}".format(props))
         return props
     finally:
         if driver is not None:
             driver.close()
+
+
+def _create_undetected_chrome():
+    options = uc.ChromeOptions()
+    options.headless = True
+    options.add_argument('--headless')
+    return uc.Chrome(options=options)
 
 
 def _create_chrome():
@@ -101,19 +118,39 @@ def _create_chrome():
                                 "Mozilla/5.0 (X11; Linux x86_64) "
                                 "AppleWebKit/537.36 (KHTML, like Gecko) "
                                 "Chrome/98.0.4758.80 Safari/537.36")
+
+    # For older ChromeDriver under version 79.0.3945.16
+    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    chrome_options.add_experimental_option('useAutomationExtension', False)
+
+    # For ChromeDriver version 79.0.3945.16 or over
+    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
+
     # chrome_options.headless = True # also works
     driver = webdriver.Chrome(options=chrome_options)
+
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
+
     return driver
 
 
 def _create_firefox():
     options = FirefoxOptions()
     options.headless = True
-    profile = webdriver.FirefoxProfile()
-    profile.set_preference("general.useragent.override",
+
+    options.set_preference("dom.webdriver.enabled", False)
+    options.set_preference('useAutomationExtension', False)
+    options.set_preference('devtools.jsonview.enabled', False)
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.set_preference("general.useragent.override",
                            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:96.0) "
                            "Gecko/20100101 Firefox/96.0")
-    driver = webdriver.Firefox(options=options, firefox_profile=profile)
+
+    cap = DesiredCapabilities.FIREFOX
+    cap["marionette"] = False
+
+    driver = webdriver.Firefox(options=options, desired_capabilities=cap)
+    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
 
@@ -130,8 +167,9 @@ def run():
         }
 
     except Exception as exp:
+        _logger.exception(exp)
         return Response(json.dumps({"err": repr(exp)}), status=500, mimetype='application/json')
 
 
 if __name__ == '__main__':
-    create_app().run(host='0.0.0.0')
+    create_app().run(host='0.0.0.0', port=8088)
