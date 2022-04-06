@@ -7,6 +7,7 @@ from uuid import uuid4
 
 from flask import Flask, request, Response
 from selenium import webdriver
+from selenium.common.exceptions import NoAlertPresentException
 from selenium.webdriver import DesiredCapabilities
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options as ChromeOptions
@@ -17,6 +18,7 @@ app = Flask(__name__)
 
 _logger = logging.getLogger(__name__)
 _CAPTURE_SCREENSHOTS = False
+_HEADLESS = True
 _DEFAULT_BROWSER = "firefox"
 _DEFAULT_DELAY = "random"
 _DEFAULT_WAIT_FOR_ELEMENT_SEC = 30
@@ -44,9 +46,23 @@ def _run_action(driver, action, props):
             obj = driver.find_element(By.XPATH, action["field_xpath"])
             param_name = action["param_name"]
             props[param_name] = obj.text
+        elif what == "read_html":
+            obj = driver.find_element(By.XPATH, action["field_xpath"])
+            param_name = action["param_name"]
+            props[param_name] = obj.get_attribute('innerHTML')
         elif what == "click":
             obj = driver.find_element(By.XPATH, action["field_xpath"])
             obj.click()
+        elif what == "accept_alert":
+            try:
+                driver.switch_to.alert.accept()
+            except NoAlertPresentException:
+                pass
+        elif what == "dismiss_alert":
+            try:
+                driver.switch_to.alert.dismiss()
+            except NoAlertPresentException:
+                pass
         else:
             raise Exception("Unknown 'what' {}".format(what))
 
@@ -78,6 +94,8 @@ def _run(config):
             raise Exception("Unknown browser {}".format(browser))
 
         driver.implicitly_wait(_DEFAULT_WAIT_FOR_ELEMENT_SEC)
+        driver.maximize_window()
+        driver.delete_all_cookies()
 
         _inject_anti_detection_scripts(driver)
 
@@ -85,10 +103,10 @@ def _run(config):
         for action in config["actions"]:
             _logger.info("Running step {}".format(step_num))
             if _CAPTURE_SCREENSHOTS:
-                driver.save_screenshot("screenshots/{}-{}-PRE.png".format(unique_run_id, step_num))
+                _capture_screenshot(driver, "screenshots/{}-{}-PRE.png".format(unique_run_id, step_num))
             props = _run_action(driver, action, props)
             if _CAPTURE_SCREENSHOTS:
-                driver.save_screenshot("screenshots/{}-{}-POST.png".format(unique_run_id, step_num))
+                _capture_screenshot(driver, "screenshots/{}-{}-POST.png".format(unique_run_id, step_num))
             step_num = step_num + 1
             if step_delay == "random":
                 step_delay_num = _RANDOM_DELAY_MAX_SEC * random()
@@ -106,9 +124,19 @@ def _run(config):
             driver.close()
 
 
+# noinspection PyBroadException
+def _capture_screenshot(driver, file_name):
+    sleep(1)
+    try:
+        driver.save_screenshot(file_name)
+    except Exception:
+        _logger.exception("Error taking screenshot")
+
+
 def _inject_anti_detection_scripts(driver):
     driver.execute_script("""
         Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'connection', {get: () => undefined});
         Object.defineProperty(navigator, 'language', {get: () => 'en-US'});
         Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
         Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
@@ -214,7 +242,6 @@ def _set_chrome_options(options):
     options.add_argument("--proxy-server='direct://'")
     options.add_argument("--proxy-bypass-list=*")
     options.add_argument("--start-maximized")
-    options.add_argument('--headless')
     options.add_argument('--disable-gpu')
     options.add_argument('--disable-dev-shm-usage')
     options.add_argument('--no-sandbox')
@@ -225,12 +252,17 @@ def _set_chrome_options(options):
                          "Mozilla/5.0 (X11; Linux x86_64) "
                          "AppleWebKit/537.36 (KHTML, like Gecko) "
                          "Chrome/98.0.4758.80 Safari/537.36")
+    if _HEADLESS:
+        options.add_argument('--headless')
 
 
 def _create_firefox():
     options = FirefoxOptions()
-    options.headless = True
 
+    options.set_preference("browser.cache.disk.enable", False)
+    options.set_preference("browser.cache.memory.enable", True)
+    options.set_preference("browser.cache.offline.enable", False)
+    options.set_preference("network.http.use-cache", False)
     options.set_preference("dom.webdriver.enabled", False)
     options.set_preference('useAutomationExtension', False)
     options.set_preference('devtools.jsonview.enabled', False)
@@ -238,6 +270,8 @@ def _create_firefox():
     options.set_preference("general.useragent.override",
                            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:96.0) "
                            "Gecko/20100101 Firefox/96.0")
+    if _HEADLESS:
+        options.headless = True
 
     cap = DesiredCapabilities.FIREFOX
     cap["marionette"] = False
