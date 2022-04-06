@@ -17,6 +17,10 @@ app = Flask(__name__)
 
 _logger = logging.getLogger(__name__)
 _CAPTURE_SCREENSHOTS = False
+_DEFAULT_BROWSER = "firefox"
+_DEFAULT_DELAY = "random"
+_DEFAULT_WAIT_FOR_ELEMENT_SEC = 30
+_RANDOM_DELAY_MAX_SEC = 5
 
 
 def create_app():
@@ -57,9 +61,9 @@ def _run(config):
     driver = None
     try:
         props = config.get("props", {})
-        browser = config.get("browser", "firefox")
+        browser = config.get("browser", _DEFAULT_BROWSER)
 
-        step_delay = config.get("step_delay", "random")
+        step_delay = config.get("step_delay", _DEFAULT_DELAY)
 
         unique_run_id = str(uuid4())
 
@@ -73,9 +77,9 @@ def _run(config):
         else:
             raise Exception("Unknown browser {}".format(browser))
 
-        driver.implicitly_wait(30)
+        driver.implicitly_wait(_DEFAULT_WAIT_FOR_ELEMENT_SEC)
 
-        inject_anti_detection_scripts(driver)
+        _inject_anti_detection_scripts(driver)
 
         step_num = 1
         for action in config["actions"]:
@@ -87,7 +91,7 @@ def _run(config):
                 driver.save_screenshot("screenshots/{}-{}-POST.png".format(unique_run_id, step_num))
             step_num = step_num + 1
             if step_delay == "random":
-                step_delay_num = 5 * random()
+                step_delay_num = _RANDOM_DELAY_MAX_SEC * random()
             else:
                 step_delay_num = float(step_delay)
 
@@ -102,7 +106,7 @@ def _run(config):
             driver.close()
 
 
-def inject_anti_detection_scripts(driver):
+def _inject_anti_detection_scripts(driver):
     driver.execute_script("""
         Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
         Object.defineProperty(navigator, 'language', {get: () => 'en-US'});
@@ -191,42 +195,36 @@ def inject_anti_detection_scripts(driver):
 def _create_undetected_chrome():
     options = uc.ChromeOptions()
     options.headless = True
-    options.add_argument('--headless')
-    options.add_argument("--user-agent="
-                         "Mozilla/5.0 (X11; Linux x86_64) "
-                         "AppleWebKit/537.36 (KHTML, like Gecko) "
-                         "Chrome/98.0.4758.80 Safari/537.36")
+    _set_chrome_options(options)
     return uc.Chrome(options=options)
 
 
 def _create_chrome():
-    chrome_options = ChromeOptions()
-    chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.add_argument("--disable-extensions")
-    chrome_options.add_argument("--proxy-server='direct://'")
-    chrome_options.add_argument("--proxy-bypass-list=*")
-    chrome_options.add_argument("--start-maximized")
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--disable-gpu')
-    chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--ignore-certificate-errors')
-    chrome_options.add_argument("--user-agent="
-                                "Mozilla/5.0 (X11; Linux x86_64) "
-                                "AppleWebKit/537.36 (KHTML, like Gecko) "
-                                "Chrome/98.0.4758.80 Safari/537.36")
-
-    # For older ChromeDriver under version 79.0.3945.16
-    chrome_options.add_experimental_option("excludeSwitches", ["enable-automation"])
-    chrome_options.add_experimental_option('useAutomationExtension', False)
-
-    # For ChromeDriver version 79.0.3945.16 or over
-    chrome_options.add_argument('--disable-blink-features=AutomationControlled')
-
-    # chrome_options.headless = True # also works
-    driver = webdriver.Chrome(options=chrome_options)
-
+    options = ChromeOptions()
+    _set_chrome_options(options)
+    options.add_experimental_option("excludeSwitches", ["enable-automation"])
+    options.add_experimental_option('useAutomationExtension', False)
+    driver = webdriver.Chrome(options=options)
     return driver
+
+
+def _set_chrome_options(options):
+    options.add_argument("--window-size=1920,1080")
+    options.add_argument("--disable-extensions")
+    options.add_argument("--proxy-server='direct://'")
+    options.add_argument("--proxy-bypass-list=*")
+    options.add_argument("--start-maximized")
+    options.add_argument('--headless')
+    options.add_argument('--disable-gpu')
+    options.add_argument('--disable-dev-shm-usage')
+    options.add_argument('--no-sandbox')
+    options.add_argument('--incognito')
+    options.add_argument('--ignore-certificate-errors')
+    options.add_argument('--disable-blink-features=AutomationControlled')
+    options.add_argument("--user-agent="
+                         "Mozilla/5.0 (X11; Linux x86_64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/98.0.4758.80 Safari/537.36")
 
 
 def _create_firefox():
