@@ -1,5 +1,6 @@
 import json
 import logging
+import os
 from random import random
 from time import sleep
 from uuid import uuid4
@@ -20,6 +21,8 @@ _CAPTURE_SCREENSHOTS = False
 
 def create_app():
     logging.basicConfig(level=logging.INFO)
+    if _CAPTURE_SCREENSHOTS:
+        os.makedirs("screenshots", exist_ok=True)
     return app
 
 
@@ -55,6 +58,7 @@ def _run(config):
     try:
         props = config.get("props", {})
         browser = config.get("browser", "firefox")
+
         step_delay = config.get("step_delay", "random")
 
         unique_run_id = str(uuid4())
@@ -70,23 +74,26 @@ def _run(config):
             raise Exception("Unknown browser {}".format(browser))
 
         driver.implicitly_wait(30)
+
+        inject_anti_detection_scripts(driver)
+
         step_num = 1
         for action in config["actions"]:
             _logger.info("Running step {}".format(step_num))
             if _CAPTURE_SCREENSHOTS:
-                driver.save_screenshot("{}-{}-PRE.png".format(unique_run_id, step_num))
+                driver.save_screenshot("screenshots/{}-{}-PRE.png".format(unique_run_id, step_num))
             props = _run_action(driver, action, props)
             if _CAPTURE_SCREENSHOTS:
-                driver.save_screenshot("{}-{}-POST.png".format(unique_run_id, step_num))
+                driver.save_screenshot("screenshots/{}-{}-POST.png".format(unique_run_id, step_num))
             step_num = step_num + 1
             if step_delay == "random":
-                step_delay_int = int(10 * random())
+                step_delay_num = 5 * random()
             else:
-                step_delay_int = int(step_delay)
+                step_delay_num = float(step_delay)
 
-            if step_delay_int > 0:
-                _logger.info("Sleeping for {} seconds".format(step_delay_int))
-                sleep(step_delay_int)
+            if step_delay_num > 0:
+                _logger.info("Sleeping for {} seconds".format(step_delay_num))
+                sleep(step_delay_num)
 
         _logger.info("Finished running, result - {}".format(props))
         return props
@@ -95,10 +102,100 @@ def _run(config):
             driver.close()
 
 
+def inject_anti_detection_scripts(driver):
+    driver.execute_script("""
+        Object.defineProperty(navigator, 'webdriver', {get: () => undefined});
+        Object.defineProperty(navigator, 'language', {get: () => 'en-US'});
+        Object.defineProperty(navigator, 'deviceMemory', {get: () => 8});
+        Object.defineProperty(navigator, 'hardwareConcurrency', {get: () => 8});
+        Object.defineProperty(navigator, 'platform', {get: () => 'MacIntel'});
+        Object.defineProperty(navigator, 'languages', {
+          get: function() {
+            return ['en-US', 'en'];
+          },
+        });        
+        Object.defineProperty(navigator, 'plugins', {
+          get: function() {
+            // this just needs to have `length > 0`, but we could mock the plugins too
+            return [1, 2, 3, 4, 5];
+          },
+        });
+    
+         var inject = function () {
+            var overwrite = function (name) {
+              const OLD = HTMLCanvasElement.prototype[name];
+              Object.defineProperty(HTMLCanvasElement.prototype, name, {
+                "value": function () {
+                  var shift = {
+                    'r': Math.floor(Math.random() * 10) - 5,
+                    'g': Math.floor(Math.random() * 10) - 5,
+                    'b': Math.floor(Math.random() * 10) - 5,
+                    'a': Math.floor(Math.random() * 10) - 5
+                  };
+                  var width = this.width, height = this.height, context = this.getContext("2d");
+                  var imageData = context.getImageData(0, 0, width, height);
+                  for (var i = 0; i < height; i++) {
+                    for (var j = 0; j < width; j++) {
+                      var n = ((i * (width * 4)) + (j * 4));
+                      imageData.data[n + 0] = imageData.data[n + 0] + shift.r;
+                      imageData.data[n + 1] = imageData.data[n + 1] + shift.g;
+                      imageData.data[n + 2] = imageData.data[n + 2] + shift.b;
+                      imageData.data[n + 3] = imageData.data[n + 3] + shift.a;
+                    }
+                  }
+                  context.putImageData(imageData, 0, 0);
+                  return OLD.apply(this, arguments);
+                }
+              });
+            };
+            overwrite('toBlob');
+            overwrite('toDataURL');
+          };
+          inject();   
+          
+        const getParameter = WebGLRenderingContext.getParameter;
+        WebGLRenderingContext.prototype.getParameter = function(parameter) {
+          // UNMASKED_VENDOR_WEBGL
+          if (parameter === 37445) {
+            return 'Intel Open Source Technology Center';
+          }
+          // UNMASKED_RENDERER_WEBGL
+          if (parameter === 37446) {
+            return 'Mesa DRI Intel(R) Ivybridge Mobile ';
+          }
+        
+          return getParameter(parameter);
+        };
+
+        ['height', 'width'].forEach(property => {
+          // store the existing descriptor
+          const imageDescriptor = Object.getOwnPropertyDescriptor(HTMLImageElement.prototype, property);
+        
+          // redefine the property with a patched descriptor
+          Object.defineProperty(HTMLImageElement.prototype, property, {
+            ...imageDescriptor,
+            get: function() {
+              // return an arbitrary non-zero dimension if the image failed to load
+              if (this.complete && this.naturalHeight == 0) {
+                return 20;
+              }
+              // otherwise, return the actual dimension
+              return imageDescriptor.get.apply(this);
+            },
+          });
+        });
+               
+            """)
+
+
 def _create_undetected_chrome():
     options = uc.ChromeOptions()
     options.headless = True
     options.add_argument('--headless')
+    options.add_argument("--user-agent="
+                         "Mozilla/5.0 (X11; Linux x86_64) "
+                         "AppleWebKit/537.36 (KHTML, like Gecko) "
+                         "Chrome/98.0.4758.80 Safari/537.36")
     return uc.Chrome(options=options)
 
 
@@ -129,8 +226,6 @@ def _create_chrome():
     # chrome_options.headless = True # also works
     driver = webdriver.Chrome(options=chrome_options)
 
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
-
     return driver
 
 
@@ -150,7 +245,6 @@ def _create_firefox():
     cap["marionette"] = False
 
     driver = webdriver.Firefox(options=options, desired_capabilities=cap)
-    driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})")
     return driver
 
 
