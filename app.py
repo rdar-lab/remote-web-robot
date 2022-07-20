@@ -12,6 +12,10 @@ from selenium.webdriver import DesiredCapabilities
 from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options as ChromeOptions
 from selenium.webdriver.firefox.options import Options as FirefoxOptions
+from selenium.webdriver.chrome.service import Service as ChromeService
+from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.firefox.service import Service as FirefoxService
+from webdriver_manager.firefox import GeckoDriverManager
 import undetected_chromedriver as uc
 
 app = Flask(__name__)
@@ -232,7 +236,7 @@ def _create_chrome():
     _set_chrome_options(options)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
-    driver = webdriver.Chrome(options=options)
+    driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
     return driver
 
 
@@ -276,7 +280,8 @@ def _create_firefox():
     cap = DesiredCapabilities.FIREFOX
     cap["marionette"] = False
 
-    driver = webdriver.Firefox(options=options, desired_capabilities=cap)
+    driver = webdriver.Firefox(service=FirefoxService(GeckoDriverManager().install()), options=options,
+                               desired_capabilities=cap)
     return driver
 
 
