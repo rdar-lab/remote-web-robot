@@ -22,8 +22,8 @@ app = Flask(__name__)
 
 _logger = logging.getLogger(__name__)
 _CAPTURE_SCREENSHOTS = False
-_HEADLESS = True
-_DEFAULT_BROWSER = "firefox"
+_HEADLESS = False
+_DEFAULT_BROWSER = "chrome"
 _DEFAULT_DELAY = "random"
 _DEFAULT_WAIT_FOR_ELEMENT_SEC = 30
 _RANDOM_DELAY_MAX_SEC = 5
