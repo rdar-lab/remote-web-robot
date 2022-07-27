@@ -4,3 +4,4 @@ venv
 *.png
 *.log
 screenshots
+*__pycache__*

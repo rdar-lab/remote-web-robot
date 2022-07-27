@@ -82,6 +82,7 @@ def _run(config):
     try:
         props = config.get("props", {})
         browser = config.get("browser", _DEFAULT_BROWSER)
+        headless = config.get("headless", _HEADLESS)
 
         step_delay = config.get("step_delay", _DEFAULT_DELAY)
 
@@ -89,9 +90,9 @@ def _run(config):
 
         _logger.info("Browser init - {}".format(browser))
         if browser == "firefox":
-            driver = _create_firefox()
+            driver = _create_firefox(headless)
         elif browser == "chrome":
-            driver = _create_chrome()
+            driver = _create_chrome(headless)
         elif browser == "undetected_chrome":
             driver = _create_undetected_chrome()
         else:
@@ -231,16 +232,16 @@ def _create_undetected_chrome():
     return uc.Chrome(options=options)
 
 
-def _create_chrome():
+def _create_chrome(headless):
     options = ChromeOptions()
-    _set_chrome_options(options)
+    _set_chrome_options(options, headless)
     options.add_experimental_option("excludeSwitches", ["enable-automation"])
     options.add_experimental_option('useAutomationExtension', False)
     driver = webdriver.Chrome(service=ChromeService(ChromeDriverManager().install()), options=options)
     return driver
 
 
-def _set_chrome_options(options):
+def _set_chrome_options(options, headless):
     options.add_argument("--window-size=1920,1080")
     options.add_argument("--disable-extensions")
     options.add_argument("--proxy-server='direct://'")
@@ -256,11 +257,11 @@ def _set_chrome_options(options):
                          "Mozilla/5.0 (X11; Linux x86_64) "
                          "AppleWebKit/537.36 (KHTML, like Gecko) "
                          "Chrome/98.0.4758.80 Safari/537.36")
-    if _HEADLESS:
+    if headless:
         options.add_argument('--headless')
 
 
-def _create_firefox():
+def _create_firefox(headless):
     options = FirefoxOptions()
 
     options.set_preference("browser.cache.disk.enable", False)
@@ -274,7 +275,7 @@ def _create_firefox():
     options.set_preference("general.useragent.override",
                            "Mozilla/5.0 (X11; Ubuntu; Linux x86_64; rv:96.0) "
                            "Gecko/20100101 Firefox/96.0")
-    if _HEADLESS:
+    if headless:
         options.headless = True
 
     cap = DesiredCapabilities.FIREFOX
@@ -283,6 +284,11 @@ def _create_firefox():
     driver = webdriver.Firefox(service=FirefoxService(GeckoDriverManager().install()), options=options,
                                desired_capabilities=cap)
     return driver
+
+
+@app.route('/health_check', methods=['get'])
+def health_check():
+    return "OK"
 
 
 @app.route('/run', methods=['POST'])
