@@ -1,0 +1,16 @@
+[Unit]
+Description=Gunicorn instance to serve web robot application
+After=network.target
+
+[Service]
+User=ubuntu
+Group=www-data
+WorkingDirectory=/home/ubuntu/web-robot-app
+Environment=DISPLAY=:1
+Environment=PATH=/home/ubuntu/web-robot-app/venv/bin:/home/ubuntu/.local/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin
+ExecStart=/home/ubuntu/web-robot-app/venv/bin/gunicorn --timeout 300 --workers 3 --bind unix:web-robot-app.sock -m 007 'app:create_app()'
+StandardOutput=file:/var/log/web-robot-out.log
+StandardError=file:/var/log/web-robot-err.log
+
+[Install]
+WantedBy=multi-user.target
