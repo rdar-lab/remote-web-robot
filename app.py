@@ -5,18 +5,17 @@ from random import random
 from time import sleep
 from uuid import uuid4
 
+import undetected_chromedriver as uc
 from flask import Flask, request, Response
 from selenium import webdriver
 from selenium.common.exceptions import NoAlertPresentException
-from selenium.webdriver import DesiredCapabilities
-from selenium.webdriver.common.by import By
 from selenium.webdriver.chrome.options import Options as ChromeOptions
-from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.chrome.service import Service as ChromeService
-from webdriver_manager.chrome import ChromeDriverManager
+from selenium.webdriver.common.by import By
+from selenium.webdriver.firefox.options import Options as FirefoxOptions
 from selenium.webdriver.firefox.service import Service as FirefoxService
+from webdriver_manager.chrome import ChromeDriverManager
 from webdriver_manager.firefox import GeckoDriverManager
-import undetected_chromedriver as uc
 
 app = Flask(__name__)
 
@@ -109,7 +108,16 @@ def _run(config):
             _logger.info("Running step {}".format(step_num))
             if _CAPTURE_SCREENSHOTS:
                 _capture_screenshot(driver, "screenshots/{}-{}-PRE.png".format(unique_run_id, step_num))
-            props = _run_action(driver, action, props)
+
+            is_optional = action.get("optional", False)
+            try:
+                props = _run_action(driver, action, props)
+            except Exception as exp:
+                if is_optional:
+                    _logger.info(f'Step is marked as optional, and failed due to err: {repr(exp)}. Will skip it')
+                else:
+                    raise
+
             if _CAPTURE_SCREENSHOTS:
                 _capture_screenshot(driver, "screenshots/{}-{}-POST.png".format(unique_run_id, step_num))
             step_num = step_num + 1
@@ -227,8 +235,7 @@ def _inject_anti_detection_scripts(driver):
 
 def _create_undetected_chrome():
     options = uc.ChromeOptions()
-    options.headless = True
-    _set_chrome_options(options)
+    _set_chrome_options(options, True)
     return uc.Chrome(options=options)
 
 
@@ -259,6 +266,7 @@ def _set_chrome_options(options, headless):
                          "Chrome/98.0.4758.80 Safari/537.36")
     if headless:
         options.add_argument('--headless')
+        options.headless = True
 
 
 def _create_firefox(headless):
@@ -277,12 +285,9 @@ def _create_firefox(headless):
                            "Gecko/20100101 Firefox/96.0")
     if headless:
         options.headless = True
+        options.add_argument('--headless')
 
-    cap = DesiredCapabilities.FIREFOX
-    cap["marionette"] = False
-
-    driver = webdriver.Firefox(service=FirefoxService(GeckoDriverManager().install()), options=options,
-                               desired_capabilities=cap)
+    driver = webdriver.Firefox(service=FirefoxService(GeckoDriverManager().install()), options=options)
     return driver
 
 

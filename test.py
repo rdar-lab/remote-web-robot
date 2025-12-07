@@ -7,6 +7,8 @@ if __name__ == '__main__':
 
     robot_params = \
         {
+            "browser": "firefox",
+            "headless": True,
             "actions": [
                 {
                     "what": "open",

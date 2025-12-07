@@ -1,4 +1,4 @@
-FROM tiangolo/uwsgi-nginx-flask:python3.9-2021-10-26
+FROM tiangolo/uwsgi-nginx-flask:python3.10-2025-12-01
 
 RUN apt-get update
 RUN apt-get install -y firefox-esr
